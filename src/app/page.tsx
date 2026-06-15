@@ -47,7 +47,7 @@ export default function GalleryPage() {
     setFolderId(defaultFolder);
 
     // Check if passcode is saved
-    const savedPasscode = localStorage.getItem('shimla_passcode');
+    const savedPasscode = sessionStorage.getItem('shimla_passcode');
     if (savedPasscode === "Ashu's_First_trip") {
       setIsAuthenticated(true);
     }
@@ -63,7 +63,7 @@ export default function GalleryPage() {
       setSelectedIds(new Set()); // Reset selections when folder changes
       
       try {
-        const savedPasscode = localStorage.getItem('shimla_passcode') || '';
+        const savedPasscode = sessionStorage.getItem('shimla_passcode') || '';
         const res = await fetch(`/api/gallery?folderId=${folderId}`, {
           headers: {
             'Authorization': `Passcode ${savedPasscode}`
@@ -71,7 +71,7 @@ export default function GalleryPage() {
         });
 
         if (res.status === 401) {
-          localStorage.removeItem('shimla_passcode');
+          sessionStorage.removeItem('shimla_passcode');
           setIsAuthenticated(false);
           return;
         }
@@ -111,7 +111,7 @@ export default function GalleryPage() {
       });
       
       if (res.ok) {
-        localStorage.setItem('shimla_passcode', passcode);
+        sessionStorage.setItem('shimla_passcode', passcode);
         setIsAuthenticated(true);
       } else {
         setAuthError(true);
@@ -248,7 +248,7 @@ export default function GalleryPage() {
             ? file.viewLink
             : `/api/download?id=${file.id}&isVideo=${isVideo}`;
             
-          const savedPasscode = localStorage.getItem('shimla_passcode') || '';
+          const savedPasscode = sessionStorage.getItem('shimla_passcode') || '';
           const fetchHeaders: HeadersInit = {};
           if (!file.id.startsWith('mock-')) {
             fetchHeaders['Authorization'] = `Passcode ${savedPasscode}`;
