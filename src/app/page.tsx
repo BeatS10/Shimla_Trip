@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, SlidersHorizontal, Image, Video, CheckSquare, 
-  Square, Download, Trash2, FolderSync, Info, AlertCircle 
+  Square, Download, Trash2, FolderSync, Info, AlertCircle, Lock
 } from 'lucide-react';
 import Header from '@/components/Header';
 import MediaCard from '@/components/MediaCard';
@@ -13,6 +13,12 @@ import { GalleryFile } from './api/gallery/route';
 import styles from './page.module.css';
 
 export default function GalleryPage() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [passcode, setPasscode] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<boolean>(false);
+
   // Gallery state
   const [files, setFiles] = useState<GalleryFile[]>([]);
   const [folderId, setFolderId] = useState<string>('');
@@ -33,25 +39,43 @@ export default function GalleryPage() {
   const [isDownloadingZip, setIsDownloadingZip] = useState<boolean>(false);
   const [zipProgress, setZipProgress] = useState<number>(0);
 
-  // Load Folder ID from URL query parameters on mount
+  // Load Folder ID & check passcode on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlFolder = params.get('folder') || params.get('folderId');
-    
-    // Fall back to env default or empty string (triggers mock mode)
     const defaultFolder = urlFolder || process.env.NEXT_PUBLIC_DEFAULT_FOLDER_ID || '';
     setFolderId(defaultFolder);
+
+    // Check if passcode is saved
+    const savedPasscode = localStorage.getItem('shimla_passcode');
+    if (savedPasscode === "Ashu's_First_trip") {
+      setIsAuthenticated(true);
+    }
   }, []);
 
   // Fetch files when folderId changes
   useEffect(() => {
+    if (!isAuthenticated) return; // Wait until authenticated
+
     const fetchGallery = async () => {
       setIsLoading(true);
       setError(null);
       setSelectedIds(new Set()); // Reset selections when folder changes
       
       try {
-        const res = await fetch(`/api/gallery?folderId=${folderId}`);
+        const savedPasscode = localStorage.getItem('shimla_passcode') || '';
+        const res = await fetch(`/api/gallery?folderId=${folderId}`, {
+          headers: {
+            'Authorization': `Passcode ${savedPasscode}`
+          }
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem('shimla_passcode');
+          setIsAuthenticated(false);
+          return;
+        }
+
         if (!res.ok) {
           throw new Error(`Server returned code ${res.status}`);
         }
@@ -71,7 +95,35 @@ export default function GalleryPage() {
     };
 
     fetchGallery();
-  }, [folderId]);
+  }, [folderId, isAuthenticated]);
+
+  // Handle Passcode verification
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifying(true);
+    setAuthError(false);
+    
+    try {
+      const res = await fetch(`/api/gallery?folderId=${folderId}`, {
+        headers: {
+          'Authorization': `Passcode ${passcode}`
+        }
+      });
+      
+      if (res.ok) {
+        localStorage.setItem('shimla_passcode', passcode);
+        setIsAuthenticated(true);
+      } else {
+        setAuthError(true);
+        setTimeout(() => setAuthError(false), 800);
+      }
+    } catch (err) {
+      setAuthError(true);
+      setTimeout(() => setAuthError(false), 800);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   // Synchronize folder change in URL to make sharing seamless
   const handleFolderChange = (newFolderId: string) => {
@@ -196,7 +248,13 @@ export default function GalleryPage() {
             ? file.viewLink
             : `/api/download?id=${file.id}&isVideo=${isVideo}`;
             
-          const res = await fetch(downloadUrl);
+          const savedPasscode = localStorage.getItem('shimla_passcode') || '';
+          const fetchHeaders: HeadersInit = {};
+          if (!file.id.startsWith('mock-')) {
+            fetchHeaders['Authorization'] = `Passcode ${savedPasscode}`;
+          }
+
+          const res = await fetch(downloadUrl, { headers: fetchHeaders });
           if (!res.ok) {
             throw new Error(`HTTP status ${res.status}`);
           }
@@ -266,6 +324,36 @@ export default function GalleryPage() {
     if (filteredAndSortedFiles.length === 0) return false;
     return filteredAndSortedFiles.every(f => selectedIds.has(f.id));
   }, [filteredAndSortedFiles, selectedIds]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className={styles.lockScreen}>
+        <div className={`${styles.lockCard} ${authError ? styles.shake : ''}`}>
+          <div className={styles.lockIconWrapper}>
+            <Lock size={24} />
+          </div>
+          <h2 className={styles.lockTitle}>Private Gallery Portal</h2>
+          <p className={styles.lockSubtitle}>
+            Please enter the access code to view the Shimla Trip photos & videos.
+          </p>
+          <form onSubmit={handleAuthSubmit} className={styles.lockForm}>
+            <input
+              type="password"
+              placeholder="Enter passcode..."
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              className={styles.lockInput}
+              disabled={isVerifying}
+              autoFocus
+            />
+            <button type="submit" className={styles.lockBtn} disabled={isVerifying || !passcode.trim()}>
+              {isVerifying ? 'Verifying...' : 'Access Gallery'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className={styles.main}>

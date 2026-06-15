@@ -110,6 +110,12 @@ const MOCK_FILES: GalleryFile[] = [
 ];
 
 export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  const expectedAuth = "Passcode Ashu's_First_trip";
+  if (!authHeader || authHeader !== expectedAuth) {
+    return NextResponse.json({ error: 'Unauthorized. Invalid passcode.' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const folderId = searchParams.get('folderId') || process.env.NEXT_PUBLIC_DEFAULT_FOLDER_ID;
   const apiKey = process.env.GOOGLE_API_KEY;

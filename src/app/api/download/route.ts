@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  const expectedAuth = "Passcode Ashu's_First_trip";
+  if (!authHeader || authHeader !== expectedAuth) {
+    return new NextResponse('Unauthorized', { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const fileId = searchParams.get('id');
   const isVideo = searchParams.get('isVideo') === 'true';
