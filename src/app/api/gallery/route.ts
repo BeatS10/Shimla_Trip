@@ -124,12 +124,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Construct Google Drive API request to list files in the specific folder
-    // Query filter details:
-    // - parent must be folderId
-    // - must not be in trash
-    // - mimeType must be image/* or video/*
-    const q = `'${folderId}' in parents and trashed = false and (mimeType starts with 'image/' or mimeType starts with 'video/')`;
+    // 1. Fetch any subfolders directly inside the root folder
+    const subfolderQuery = `mimeType = 'application/vnd.google-apps.folder' and '${folderId}' in parents and trashed = false`;
+    const subfolderUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subfolderQuery)}&fields=files(id)&key=${apiKey}&pageSize=100`;
+    
+    let parentIds = [folderId];
+    try {
+      const subfolderRes = await fetch(subfolderUrl);
+      if (subfolderRes.ok) {
+        const subfolderData = await subfolderRes.json();
+        const subfolders = subfolderData.files || [];
+        parentIds = [folderId, ...subfolders.map((f: any) => f.id)];
+      }
+    } catch (err) {
+      console.error('Failed to fetch subfolders, falling back to root folder only:', err);
+    }
+
+    // 2. Query all images and videos belonging to any of these parent folders
+    const parentConditions = parentIds.map(id => `'${id}' in parents`).join(' or ');
+    const q = `(${parentConditions}) and trashed = false and (mimeType starts with 'image/' or mimeType starts with 'video/')`;
     
     // We order by name naturally, which aligns with standard photo sequences
     const fields = 'files(id, name, mimeType, size, createdTime, videoMediaMetadata(durationMillis))';
