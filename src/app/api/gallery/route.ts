@@ -140,28 +140,23 @@ export async function GET(request: Request) {
       console.error('Failed to fetch subfolders, falling back to root folder only:', err);
     }
 
-    // 2. Query all images and videos belonging to any of these parent folders
-    const parentConditions = parentIds.map(id => `'${id}' in parents`).join(' or ');
-    const q = `(${parentConditions}) and trashed = false and (mimeType starts with 'image/' or mimeType starts with 'video/')`;
-    
-    // We order by name naturally, which aligns with standard photo sequences
-    const fields = 'files(id, name, mimeType, size, createdTime, videoMediaMetadata(durationMillis))';
-    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&key=${apiKey}&pageSize=1000`;
+    // 2. Query all images and videos belonging to any of these parent folders in parallel
+    const fetchPromises = parentIds.map(async (pId) => {
+      const q = `'${pId}' in parents and trashed = false and (mimeType starts with 'image/' or mimeType starts with 'video/')`;
+      const fields = 'files(id, name, mimeType, size, createdTime, videoMediaMetadata(durationMillis))';
+      const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&key=${apiKey}&pageSize=1000`;
+      
+      const res = await fetch(driveUrl);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(`Google API error for folder ${pId}: ${res.statusText || res.status}. Details: ${JSON.stringify(errData)}`);
+      }
+      const data = await res.json();
+      return data.files || [];
+    });
 
-    const response = await fetch(driveUrl);
-    
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      console.error('Google API Error:', errData);
-      return NextResponse.json({
-        files: MOCK_FILES,
-        isMock: true,
-        error: `Failed to fetch from Google Drive API: ${response.statusText || response.status}. Displaying mock trip photos instead.`
-      });
-    }
-
-    const data = await response.json();
-    const driveFiles = data.files || [];
+    const results = await Promise.all(fetchPromises);
+    const driveFiles = results.flat();
 
     const mappedFiles: GalleryFile[] = driveFiles.map((file: any) => {
       const isVideo = file.mimeType.startsWith('video/');
